@@ -1,55 +1,55 @@
-import dotenv from "dotenv";
+// api/src/config/env.ts
 import { z } from "zod";
 
-dotenv.config();
-
-// ===== 型付き環境変数スキーマ =====
-const EnvSchema = z.object({
+/**
+ * 環境変数スキーマ定義
+ */
+export const EnvSchema = z.object({
   PORT: z.string().default("8787"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  CORS_ORIGIN: z.string().default("*"),
   LOG_LEVEL: z.string().default("info"),
 
-  // Provider switches
-  DB_PROVIDER: z.enum(["memory", "firestore", "postgres", "sqlite"]).default("memory"),
+  DB_PROVIDER: z
+    .enum(["memory", "firestore", "postgres", "sqlite"])
+    .default("memory"),
+
   AI_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
-  LOG_SINK: z.enum(["none", "console", "sheets"]).default("console"),
 
-  // Database
-  DATABASE_URL: z.string().optional(),
+  // ✅ レートリミット設定
+  RATE_LIMIT_WINDOW_MS: z.string().default("60000"),
+  RATE_LIMIT_MAX: z.string().default("100"),
 
-  // Firebase / Firestore
-  FIREBASE_PROJECT_ID: z.string().optional(),
+  // ✅ Firebase 関連
+  FIREBASE_PROJECT_ID: z.string().default("liflo-ai"),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
-  FIREBASE_PRIVATE_KEY: z
-    .string()
-    .optional()
-    .transform((val) => (val ? val.replace(/\\n/g, "\n") : undefined)),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
 
-  // Auth / Crypto
-  JWT_SECRET: z.string().optional(),
-  ARGON2_MEMORY: z.coerce.number().default(19456),
-  ARGON2_ITERATIONS: z.coerce.number().default(2),
-  ARGON2_PARALLELISM: z.coerce.number().default(1),
-
-  // AI
+  // ✅ OpenAI & Google Sheets 関連
   OPENAI_API_KEY: z.string().optional(),
-
-  // Google Sheets Logging
   SHEETS_SPREADSHEET_ID: z.string().optional(),
   SHEETS_TAB_PREFIX: z.string().default("logs_"),
   GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
-  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: z
-    .string()
-    .optional()
-    .transform((v) => (v ? v.replace(/\\n/g, "\n") : undefined)),
+  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: z.string().optional(),
 
-  SHEETS_BATCH_SIZE: z.coerce.number().default(20),
-  SHEETS_FLUSH_INTERVAL_MS: z.coerce.number().default(3000),
+  // ✅ SheetsSink設定
+  SHEETS_BATCH_SIZE: z.string().default("20"),
+  SHEETS_FLUSH_INTERVAL_MS: z.string().default("3000"),
+
+  // ✅ ログ出力
+  LOG_SINK: z.enum(["console", "sheets", "none"]).default("console"),
 });
 
-export const env = EnvSchema.parse(process.env);
-
+/**
+ * スキーマから型を生成
+ */
 export type Env = z.infer<typeof EnvSchema>;
 
-export const isDev = env.NODE_ENV === "development";
+/**
+ * 検証済み環境変数を取得
+ */
+export const env = EnvSchema.parse(process.env);
+
+// ✅ 環境補助フラグとCORS設定
+export const isProd = env.NODE_ENV === "production";
+export const corsOrigins = env.CORS_ORIGIN.split(",").map((s: string) => s.trim());

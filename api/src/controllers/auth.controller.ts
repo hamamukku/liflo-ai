@@ -15,7 +15,7 @@ function getClientMeta(req: Request) {
   const ip =
     ((req.headers["x-forwarded-for"] as string) || "")
       .split(",")
-      .map((s) => s.trim())
+      .map((s: string) => s.trim())
       .filter(Boolean)[0] ||
     (req.socket as any)?.remoteAddress ||
     req.ip ||
@@ -40,19 +40,15 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       pin?: string;
     };
 
-    // 入力検証（validateミドルウェア併用前提の最小チェック）
     if (!nickname || !pin) {
       const err: any = new Error("bad_request");
       err.status = 400;
       throw err;
     }
 
-    // サービス署名に合わせて2引数で呼び出す
     const result = await authService.login(nickname, pin); // { customToken, userId }
-
     res.status(200).json(result);
 
-    // 監査ログ（PII: nickname/pin 非記録）
     void logSink.append([
       {
         ts: new Date().toISOString(),
@@ -63,6 +59,48 @@ export async function login(req: Request, res: Response, next: NextFunction) {
         event: "LOGIN_SUCCESS",
         status: "success",
         latencyMs: Date.now() - started,
+        ip,
+        ua,
+      },
+    ]);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /auth/register
+ * Body: { nickname: string, pin: string }
+ * Res:  { userId: string }
+ */
+export async function register(req: Request, res: Response, next: NextFunction) {
+  const requestId = getReqId(req);
+  const { ip, ua } = getClientMeta(req);
+
+  try {
+    const { nickname, pin } = (req.body ?? {}) as {
+      nickname?: string;
+      pin?: string;
+    };
+
+    if (!nickname || !pin) {
+      const err: any = new Error("bad_request");
+      err.status = 400;
+      throw err;
+    }
+
+    const user = await authService.register(nickname, pin); // { userId }
+    res.status(201).json(user);
+
+    void logSink.append([
+      {
+        ts: new Date().toISOString(),
+        requestId,
+        userId: user.userId,
+        endpoint: "/auth/register",
+        method: "POST",
+        event: "REGISTER_SUCCESS",
+        status: "success",
         ip,
         ua,
       },

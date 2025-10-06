@@ -5,10 +5,7 @@ import * as recordsService from "../services/records.service.js";
 import { logSink } from "../config/providers.js";
 
 function getReqId(req: Request): string {
-  return (
-    (req as any).id ??
-    (typeof randomUUID === "function" ? randomUUID() : String(Date.now()))
-  );
+  return (req as any).id ?? (typeof randomUUID === "function" ? randomUUID() : String(Date.now()));
 }
 
 function requireUserId(req: Request): string {
@@ -25,7 +22,7 @@ function getClientMeta(req: Request) {
   const ip =
     ((req.headers["x-forwarded-for"] as string) || "")
       .split(",")
-      .map((s) => s.trim())
+      .map((s: string) => s.trim())
       .filter(Boolean)[0] ||
     (req.socket as any)?.remoteAddress ||
     req.ip ||
@@ -34,12 +31,23 @@ function getClientMeta(req: Request) {
   return { ip, ua };
 }
 
+type CS = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+function toCS(n: unknown): CS {
+  const v = Number(n);
+  if (!Number.isInteger(v) || v < 1 || v > 7) {
+    const e: any = new Error("bad_request_cs_out_of_range");
+    e.status = 400;
+    throw e;
+  }
+  return v as CS;
+}
+
 /**
  * POST /records
  * Body: { goalId: string; date: string; challengeU: 1..7; skillU: 1..7; reasonU?: string }
  * Res:  201 with created record including AI evaluation (aiChallenge, aiSkill, aiComment, regoalAI?)
  */
-export async function createRecord(req: Request, res: Response, next: NextFunction) {
+export async function create(req: Request, res: Response, next: NextFunction) {
   const started = Date.now();
   const requestId = getReqId(req);
   const { ip, ua } = getClientMeta(req);
@@ -47,21 +55,25 @@ export async function createRecord(req: Request, res: Response, next: NextFuncti
   try {
     const userId = requireUserId(req);
 
-    // CS(1..7) ユニオンに合わせて数値化＋型キャスト
-    const challenge = Number((req.body as any)?.challengeU);
-    const skill = Number((req.body as any)?.skillU);
+    const goalId = String((req.body as any)?.goalId ?? "");
+    const date = String((req.body as any)?.date ?? "");
+    if (!goalId || !date) {
+      const e: any = new Error("bad_request");
+      e.status = 400;
+      throw e;
+    }
 
     const input: {
       goalId: string;
       date: string;
-      challengeU: 1 | 2 | 3 | 4 | 5 | 6 | 7;
-      skillU: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+      challengeU: CS;
+      skillU: CS;
       reasonU?: string;
     } = {
-      goalId: String((req.body as any)?.goalId ?? ""),
-      date: String((req.body as any)?.date ?? ""),
-      challengeU: challenge as 1 | 2 | 3 | 4 | 5 | 6 | 7,
-      skillU: skill as 1 | 2 | 3 | 4 | 5 | 6 | 7,
+      goalId,
+      date,
+      challengeU: toCS((req.body as any)?.challengeU),
+      skillU: toCS((req.body as any)?.skillU),
       reasonU: (req.body as any)?.reasonU ?? undefined,
     };
 
@@ -81,13 +93,13 @@ export async function createRecord(req: Request, res: Response, next: NextFuncti
         latencyMs: Date.now() - started,
         ip,
         ua,
-        recordId: created.id,
-        goalId: created.goalId,
-        date: created.date,
-        challengeU: created.challengeU,
-        skillU: created.skillU,
-        aiChallenge: created.aiChallenge,
-        aiSkill: created.aiSkill,
+        recordId: (created as any).id,
+        goalId: (created as any).goalId,
+        date: (created as any).date,
+        challengeU: (created as any).challengeU,
+        skillU: (created as any).skillU,
+        aiChallenge: (created as any).aiChallenge,
+        aiSkill: (created as any).aiSkill,
         statusCode: 201,
       },
     ]);
@@ -95,3 +107,6 @@ export async function createRecord(req: Request, res: Response, next: NextFuncti
     next(err);
   }
 }
+
+// 互換エクスポート（routes が records.create を参照。createRecord を参照するコードにも対応）
+export const createRecord = create;

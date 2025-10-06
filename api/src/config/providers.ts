@@ -1,11 +1,20 @@
+// api/src/config/providers.ts
 import { env } from "./env.js";
 import { MockAIProvider } from "../services/ai/mock.provider.js";
 import { OpenAIProvider } from "../services/ai/openai.provider.js";
 
 // ===== Repositories =====
 import { goalsMem, recordsMem, usersMem } from "../repositories/memory/index.js";
-import { goalsFirestore, recordsFirestore, usersFirestore } from "../repositories/firestore/index.js";
-import { goalsPostgres, recordsPostgres, usersPostgres } from "../repositories/postgres/index.js";
+import {
+  goalsFirestore as _goalsFs,
+  recordsFirestore as _recordsFs,
+  usersFirestore as _usersFs,
+} from "../repositories/firestore/index.js";
+import {
+  goalsPostgres as _goalsPg,
+  recordsPostgres as _recordsPg,
+  usersPostgres as _usersPg,
+} from "../repositories/postgres/index.js";
 
 // ===== Logging Sinks =====
 import type { ILogSink } from "../logs/index.js";
@@ -16,11 +25,20 @@ import { LogQueue } from "../logs/queue.js";
 // ----------------------
 // Repository Provider
 // ----------------------
+// Firestore / Postgres が未実装でも動くように安全にフォールバック
+const goalsFs = _goalsFs ?? goalsMem;
+const recordsFs = _recordsFs ?? recordsMem;
+const usersFs = _usersFs ?? usersMem;
+
+const goalsPg = _goalsPg ?? goalsMem;
+const recordsPg = _recordsPg ?? recordsMem;
+const usersPg = _usersPg ?? usersMem;
+
 export const repos =
   env.DB_PROVIDER === "firestore"
-    ? { goals: goalsFirestore, records: recordsFirestore, users: usersFirestore }
+    ? { goals: goalsFs, records: recordsFs, users: usersFs }
     : env.DB_PROVIDER === "postgres"
-    ? { goals: goalsPostgres, records: recordsPostgres, users: usersPostgres }
+    ? { goals: goalsPg, records: recordsPg, users: usersPg }
     : { goals: goalsMem, records: recordsMem, users: usersMem };
 
 // ----------------------
@@ -34,30 +52,47 @@ export const ai =
 // ----------------------
 // Log Sink Provider
 // ----------------------
+class NoopSink implements ILogSink {
+  async append(): Promise<void> {
+    /* noop */
+  }
+}
+
 let baseSink: ILogSink;
+const hasSheetsCreds =
+  !!env.SHEETS_SPREADSHEET_ID &&
+  !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+  !!env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
 
 switch (env.LOG_SINK) {
   case "sheets":
-    baseSink = new SheetsSink(
-      env.SHEETS_SPREADSHEET_ID!,
-      env.SHEETS_TAB_PREFIX,
-      env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
-      env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY!
-    );
+    baseSink = hasSheetsCreds
+      ? new SheetsSink(
+          env.SHEETS_SPREADSHEET_ID!,
+          env.SHEETS_TAB_PREFIX,
+          env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
+          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY!
+        )
+      : new ConsoleSink();
     break;
   case "console":
     baseSink = new ConsoleSink();
     break;
+  case "none":
   default:
-    baseSink = { append: async () => {} };
+    baseSink = new NoopSink();
     break;
 }
 
+// ✅ env は string 型なので数値に変換して渡す
+const batchSize = Number(env.SHEETS_BATCH_SIZE ?? "20");
+const flushIntervalMs = Number(env.SHEETS_FLUSH_INTERVAL_MS ?? "3000");
+
 // Log sink with queue (batch + retry)
-export const logSink = new LogQueue({
+export const logSink: ILogSink = new LogQueue({
   sink: baseSink,
-  batchSize: env.SHEETS_BATCH_SIZE,
-  flushIntervalMs: env.SHEETS_FLUSH_INTERVAL_MS,
+  batchSize,
+  flushIntervalMs,
 });
 
 // ----------------------
