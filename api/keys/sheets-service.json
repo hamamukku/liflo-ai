@@ -1,0 +1,12 @@
+{
+  "type": "service_account",
+  "project_id": "lifloai-poc",
+  "private_key_id": "YOUR_PRIVATE_KEY_ID",
+  "private_key":  "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDUZCFLtwYndNth\nvmXNx/RPcKI9YIahExr8SdmIRH/jBRE0bNP2C4BRPERqVIlqAk2QZbHxPnguMTQh\nH7KSuv00mvZ0l5ULOrzFzy9LK+QnUH2nKxD9Jku5eJBa/DSHrKGx9WSn4rCDw7IH\n4CNe/0blHTV5FTFh5hbcduZlXKp99e2Cu6ubCSqfDkd0A+Tj0F1FPPKW+iZz8kRY\nzoFZvF0PcRftm6mnTBfg9To5Vjx1EQc1zlMfhQ/RY959zlIMlOPjIPknR2VcXw5b\nENKBAKJ5eF9LdrUp6OG3H6xFccQ6Sj5OJHaFQFcOMLpDmQntcquVB4EaUP6pf40/\nmZ9mcFBDAgMBAAECggEABQwGvoXa35UnTBX6KqmrDzgzTWy9xkDDThDIhTRw1YmJ\nScr26SHc1WaujthIwPwiW7a5mRdNmSC83GH5xwLVLCrX2xgUXUVIDGtKnxQBQpiR\nuSc3gCHTgCodRAw6M1R8LdO8UJZScM8gVo+SR5pJVP3HXNk5aITPMO33tkY9cZYb\nXsxp+nhzBojAT6OKYY6mAS1S54KlvxcXhvmk/advMzfJu48K9QgZlX7uPr/0CcZu\nSUEIeqKwgTUSRvTkW5MJ7gsMro5P2kflx84zlTSikVjDjJY1pGn9WdSx1sWJiQlz\nlQLQHtE3mAHlqFAeZwDbsHsPWGqrEVZP8jX80YBAAQKBgQD4UU/nq4Wihwkp6UoX\nHWvqk6uYEYFh3qjLUU0l6F10vGrgSd85ivQxQHwPIxbvSXdqSUoZGOdpjX+Ldz+/\nttoRv5NFiwExHFHOvXWNiec+dFyIp3OU3l53jJzZ8t1pgbfnam6S0/nM58FxS/UV\nh5I0UCvmkt3A9vGW8nvl+LX9wwKBgQDa9kdBDOxFoXs5GB67ZxmPp2B2qIEb9/+e\nK0IFM7Y4G4T3FuVy8qKmJTXsWEv+a6HugovVCgpIsXDm91ncx1z8CxBSeEZ3OKQI\nbnx3QSVDeZooLA1HwRSlJ4tsfhRNzf+bhpq+mkLbC3Ms/NPyWblyqlLdduZk7fGy\nRSCDmEq7gQKBgQD17UHfxYXCI062DW/tWJwqZDnLj3q9/RDa3Bg19N2p4XlPzJmh\nmbaimKTFMRFjxzTXNOKH3JxDc3ngHCgsrOFoNn2aoEJ76voycHzdwrgcqI2EYaMc\nyuZwK/ij+d3Cwk/qhwQfsoRxpQ12Ma32tp/b45K29rlchLVbs6d1aU6ElQKBgF14\nFCKoqZNvw3Iz4aqN8FNqV7tPYw3VZ8DVJnGiCX8aAECZ/Yh8GwJhkAs8BfStbYqr\nH5Xpm0o8tL1jiXC9ievtrSIHRc1O2Hbg8zDVFlsfZbcQVvryaSW3I8VEbNZpwVta\nsmP65d8rnBbwNmmV85wHKShwwRkEmdBHwgFq2TwBAoGBANQrdBLsIIVQmwkHo/4p\n4+AIWtM3tYFIBuuUcJLk7HBjXgy2oG/sPyP7v3eUHLcqQURKVZNktsy8lKdp+tQr\nxIxopVxkpf/aeeZfFO6MahmsKPN6eJrYkjze5C+h538XoX78u4VLpJcO7GA7ztPw\n52KbP5YHEvMEnC3bRbvISAqB\n-----END PRIVATE KEY-----\n",
+  "client_email": "liflo-logger@lifloai-poc.iam.gserviceaccount.com",
+  "client_id": "YOUR_CLIENT_ID",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/liflo-logger%40lifloai-poc.iam.gserviceaccount.com"
+}

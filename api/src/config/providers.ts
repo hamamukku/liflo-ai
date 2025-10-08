@@ -3,18 +3,8 @@ import { env } from "./env.js";
 import { MockAIProvider } from "../services/ai/mock.provider.js";
 import { OpenAIProvider } from "../services/ai/openai.provider.js";
 
-// ===== Repositories =====
+// 常時使うメモリ実装のみ静的 import（安全フォールバック）
 import { goalsMem, recordsMem, usersMem } from "../repositories/memory/index.js";
-import {
-  goalsFirestore as _goalsFs,
-  recordsFirestore as _recordsFs,
-  usersFirestore as _usersFs,
-} from "../repositories/firestore/index.js";
-import {
-  goalsPostgres as _goalsPg,
-  recordsPostgres as _recordsPg,
-  usersPostgres as _usersPg,
-} from "../repositories/postgres/index.js";
 
 // ===== Logging Sinks =====
 import type { ILogSink } from "../logs/index.js";
@@ -22,56 +12,106 @@ import { ConsoleSink } from "../logs/console.sink.js";
 import { SheetsSink } from "../logs/sheets.sink.js";
 import { LogQueue } from "../logs/queue.js";
 
-// ----------------------
-// Repository Provider
-// ----------------------
-// Firestore / Postgres が未実装でも動くように安全にフォールバック
-const goalsFs = _goalsFs ?? goalsMem;
-const recordsFs = _recordsFs ?? recordsMem;
-const usersFs = _usersFs ?? usersMem;
+/** ---------------------------------------------------------
+ *  Repositories Resolver（DBごとに “必要になった時だけ” 読み込む）
+ *  --------------------------------------------------------- */
+async function resolveRepos() {
+  try {
+    if (env.DB_PROVIDER === "firestore") {
+      const fs = await import("../repositories/firestore/index.js");
+      return {
+        goals: fs.goalsFirestore,
+        records: fs.recordsFirestore,
+        users: fs.usersFirestore,
+      };
+    }
+    if (env.DB_PROVIDER === "postgres") {
+      const pg = await import("../repositories/postgres/index.js");
+      return {
+        goals: pg.goalsPostgres,
+        records: pg.recordsPostgres,
+        users: pg.usersPostgres,
+      };
+    }
+  } catch (e) {
+    console.warn("[providers] repo resolve failed, fallback to memory:", e);
+  }
+  // フォールバック：メモリ
+  return { goals: goalsMem, records: recordsMem, users: usersMem };
+}
 
-const goalsPg = _goalsPg ?? goalsMem;
-const recordsPg = _recordsPg ?? recordsMem;
-const usersPg = _usersPg ?? usersMem;
+// Node.js 22 + ESM なので TLA が使える
+export const repos = await resolveRepos();
 
-export const repos =
-  env.DB_PROVIDER === "firestore"
-    ? { goals: goalsFs, records: recordsFs, users: usersFs }
-    : env.DB_PROVIDER === "postgres"
-    ? { goals: goalsPg, records: recordsPg, users: usersPg }
-    : { goals: goalsMem, records: recordsMem, users: usersMem };
-
-// ----------------------
-// AI Provider
-// ----------------------
+/** ---------------------------------------------------------
+ *  AI Provider
+ *  --------------------------------------------------------- */
 export const ai =
   env.AI_PROVIDER === "openai" && env.OPENAI_API_KEY
     ? new OpenAIProvider(env.OPENAI_API_KEY)
     : new MockAIProvider();
 
-// ----------------------
-// Log Sink Provider
-// ----------------------
+/** ---------------------------------------------------------
+ *  Sheets 資格情報の両対応（email/privateKey or base64 JSON）
+ *  --------------------------------------------------------- */
+type GoogleSA = { client_email?: string; private_key?: string };
+
+function resolveSheetsCreds() {
+  // シートIDはどちらの名前でも拾う
+  const spreadsheetId =
+    (env as any).SHEETS_SPREADSHEET_ID ||
+    process.env.GOOGLE_SHEET_ID ||
+    (env as any).GOOGLE_SHEET_ID;
+
+  let email =
+    (env as any).GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+
+  let privateKey =
+    (env as any).GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+
+  // base64 JSON から復元（優先度は既存の email/key より下）
+  const b64 =
+    process.env.GOOGLE_CREDENTIALS_JSON_BASE64 ||
+    (env as any).GOOGLE_CREDENTIALS_JSON_BASE64;
+  if ((!email || !privateKey) && b64) {
+    try {
+      const decoded = Buffer.from(b64, "base64").toString("utf8");
+      const j = JSON.parse(decoded) as GoogleSA;
+      email = email || j.client_email || "";
+      privateKey = privateKey || j.private_key || "";
+    } catch (e) {
+      console.warn("[providers] failed to decode GOOGLE_CREDENTIALS_JSON_BASE64:", e);
+    }
+  }
+
+  return { spreadsheetId, email, privateKey };
+}
+
+/** ---------------------------------------------------------
+ *  Log Sink Provider（Console / Sheets / Noop）
+ *  --------------------------------------------------------- */
 class NoopSink implements ILogSink {
   async append(): Promise<void> {
     /* noop */
   }
 }
 
-let baseSink: ILogSink;
-const hasSheetsCreds =
-  !!env.SHEETS_SPREADSHEET_ID &&
-  !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-  !!env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+const { spreadsheetId, email: saEmail, privateKey: saPrivateKey } = resolveSheetsCreds();
+const hasSheetsCreds = !!spreadsheetId && !!saEmail && !!saPrivateKey;
 
-switch (env.LOG_SINK) {
+const selectedSink = (env as any).LOG_SINK || (hasSheetsCreds ? "sheets" : "console");
+
+let baseSink: ILogSink;
+switch (selectedSink) {
   case "sheets":
     baseSink = hasSheetsCreds
       ? new SheetsSink(
-          env.SHEETS_SPREADSHEET_ID!,
-          env.SHEETS_TAB_PREFIX,
-          env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
-          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY!
+          spreadsheetId!,
+          (env as any).SHEETS_TAB_PREFIX,
+          saEmail!,
+          saPrivateKey!
         )
       : new ConsoleSink();
     break;
@@ -84,20 +124,20 @@ switch (env.LOG_SINK) {
     break;
 }
 
-// ✅ env は string 型なので数値に変換して渡す
-const batchSize = Number(env.SHEETS_BATCH_SIZE ?? "20");
-const flushIntervalMs = Number(env.SHEETS_FLUSH_INTERVAL_MS ?? "3000");
+// env は string 想定なので数値に変換
+const batchSize = Number((env as any).SHEETS_BATCH_SIZE ?? "20");
+const flushIntervalMs = Number((env as any).SHEETS_FLUSH_INTERVAL_MS ?? "3000");
 
-// Log sink with queue (batch + retry)
+// バッチ＆リトライ付きログキュー
 export const logSink: ILogSink = new LogQueue({
   sink: baseSink,
   batchSize,
   flushIntervalMs,
 });
 
-// ----------------------
-// Export Aggregates
-// ----------------------
+/** ---------------------------------------------------------
+ *  Export Aggregates
+ *  --------------------------------------------------------- */
 export const providers = {
   repos,
   ai,

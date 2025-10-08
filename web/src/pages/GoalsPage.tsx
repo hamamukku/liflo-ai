@@ -11,14 +11,24 @@ const GoalsPage: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // listGoals() が「配列」でも「{items: 配列}」でも正しく配列に正規化
+  const normalizeGoals = (res: unknown): Goal[] => {
+    if (Array.isArray(res)) return res as Goal[];
+    if (res && typeof res === 'object' && Array.isArray((res as any).items)) {
+      return (res as any).items as Goal[];
+    }
+    return [];
+  };
+
   const fetchGoals = async () => {
     try {
       setLoading(true);
       setError('');
-      const { items } = await listGoals();
-      setGoals(items); // ← そのまま Goal[] を保持（UI用の 0 などは使わない）
+      const res = await listGoals();
+      setGoals(normalizeGoals(res));
     } catch (err: any) {
-      setError(err.message || '目標の取得に失敗しました');
+      setError(err?.message || '目標の取得に失敗しました');
+      setGoals([]); // 防御
     } finally {
       setLoading(false);
     }
@@ -35,7 +45,7 @@ const GoalsPage: React.FC = () => {
       await saveGoal({ id: goal.id, status: newStatus, reasonU: reason });
       await fetchGoals();
     } catch (err: any) {
-      window.alert(err.message || '更新に失敗しました');
+      window.alert(err?.message || '更新に失敗しました');
     }
   };
 
