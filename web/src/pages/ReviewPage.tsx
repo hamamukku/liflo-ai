@@ -1,44 +1,123 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-// 修正：getReview の呼び出しを {from,to} に変更（api.ts に合わせる）
 import { getReview } from '../app/api';
 
 interface ReviewResult {
   averageChallenge: number;
   averageSkill: number;
   counts: {
+    flow: number;
     anxiety: number;
     boredom: number;
     apathy: number;
-    flow: number;
   };
 }
 
-const toYmd = (d: Date) => d.toISOString().slice(0, 10);
+/** ローカルタイムの YYYY-MM-DD を返す（UTCズレ回避） */
+const toLocalYmd = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+};
+
+/** 4象限分類（challenge/skill の閾値=4） */
+const classify = (c: number, s: number): keyof ReviewResult['counts'] => {
+  const hiC = Number(c) >= 4;
+  const hiS = Number(s) >= 4;
+  if (hiC && hiS) return 'flow';
+  if (hiC && !hiS) return 'anxiety';
+  if (!hiC && hiS) return 'boredom';
+  return 'apathy';
+};
+
+/** サーバ/旧UIあらゆる形を安全に吸収して UI 用に正規化 */
+function normalize(raw: any): ReviewResult {
+  // --- 平均 ---
+  let averageChallenge = 0;
+  let averageSkill = 0;
+
+  if (typeof raw?.averageChallenge === 'number' && typeof raw?.averageSkill === 'number') {
+    // 旧UI（average*）互換
+    averageChallenge = raw.averageChallenge;
+    averageSkill = raw.averageSkill;
+  } else if (typeof raw?.avgChallenge === 'number' && typeof raw?.avgSkill === 'number') {
+    // サーバ現行（推奨）
+    averageChallenge = raw.avgChallenge;
+    averageSkill = raw.avgSkill;
+  } else if (typeof raw?.avgUser === 'number' && typeof raw?.avgAI === 'number') {
+    // サーバ互換キー（数値）
+    averageChallenge = raw.avgUser;
+    averageSkill = raw.avgAI;
+  } else if (raw?.avgUser && typeof raw.avgUser?.challenge === 'number' && typeof raw.avgUser?.skill === 'number') {
+    // 旧UI（オブジェクト形）
+    averageChallenge = raw.avgUser.challenge;
+    averageSkill = raw.avgUser.skill;
+  }
+
+  // --- counts ---
+  let counts: ReviewResult['counts'] = { flow: 0, anxiety: 0, boredom: 0, apathy: 0 };
+
+  if (raw?.counts && ['flow', 'anxiety', 'boredom', 'apathy'].every(k => typeof raw.counts[k] === 'number')) {
+    // 旧UI: counts が直接ある
+    counts = {
+      flow: Number(raw.counts.flow || 0),
+      anxiety: Number(raw.counts.anxiety || 0),
+      boredom: Number(raw.counts.boredom || 0),
+      apathy: Number(raw.counts.apathy || 0),
+    };
+  } else if (raw?.states) {
+    // 現行サーバ: states.{..}.count or pct
+    const fromStatesCount = (k: 'flow'|'anxiety'|'boredom'|'apathy') =>
+      Number(raw?.states?.[k]?.count ?? 0);
+
+    const hasCounts =
+      ['flow','anxiety','boredom','apathy'].some(k => Number(raw?.states?.[k]?.count ?? 0) > 0);
+
+    if (hasCounts) {
+      counts = {
+        flow: fromStatesCount('flow'),
+        anxiety: fromStatesCount('anxiety'),
+        boredom: fromStatesCount('boredom'),
+        apathy: fromStatesCount('apathy'),
+      };
+    } else if (typeof raw?.count === 'number') {
+      // pct × total から概算（端数は四捨五入）
+      const pctOf = (k: 'flow'|'anxiety'|'boredom'|'apathy', topKey: string) =>
+        Number(raw?.[topKey] ?? raw?.states?.[k]?.pct ?? 0);
+
+      const total = Math.max(0, Number(raw.count));
+      counts = {
+        flow: Math.round(total * pctOf('flow', 'flowPct') / 100),
+        anxiety: Math.round(total * pctOf('anxiety', 'anxietyPct') / 100),
+        boredom: Math.round(total * pctOf('boredom', 'boredomPct') / 100),
+        apathy: Math.round(total * pctOf('apathy', 'apathyPct') / 100),
+      };
+    }
+  }
+
+  // どれも無ければ items を再分類して counts を作る（最後の砦）
+  if (!counts.flow && !counts.anxiety && !counts.boredom && !counts.apathy && Array.isArray(raw?.items)) {
+    const bins: ReviewResult['counts'] = { flow: 0, anxiety: 0, boredom: 0, apathy: 0 };
+    for (const it of raw.items) {
+      const key = classify(Number(it?.challengeU ?? 0), Number(it?.skillU ?? 0));
+      bins[key] += 1;
+    }
+    counts = bins;
+  }
+
+  return { averageChallenge, averageSkill, counts };
+}
 
 const ReviewPage: React.FC = () => {
-  const today = toYmd(new Date());
-  const lastWeek = toYmd(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000));
+  const today = toLocalYmd(new Date());
+  const lastWeek = toLocalYmd(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000));
+
   const [start, setStart] = useState(lastWeek);
   const [end, setEnd] = useState(today);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<ReviewResult | null>(null);
-
-  // 受け取り形の揺れ（avgUser/avgAI or averageChallenge/averageSkill, counts 有無）を吸収
-  function normalize(raw: any): ReviewResult {
-    if (raw && typeof raw.averageChallenge === 'number' && typeof raw.averageSkill === 'number') {
-      return {
-        averageChallenge: raw.averageChallenge,
-        averageSkill: raw.averageSkill,
-        counts: raw.counts ?? { flow: 0, anxiety: 0, boredom: 0, apathy: 0 },
-      };
-    }
-    const averageChallenge = raw?.avgUser?.challenge ?? 0;
-    const averageSkill = raw?.avgUser?.skill ?? 0;
-    const counts = raw?.counts ?? { flow: 0, anxiety: 0, boredom: 0, apathy: 0 };
-    return { averageChallenge, averageSkill, counts };
-  }
 
   const handleFetch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,25 +125,26 @@ const ReviewPage: React.FC = () => {
       setError('開始日と終了日を選択してください');
       return;
     }
-    setError(''); setResult(null);
+    setError('');
+    setResult(null);
+    setLoading(true);
     try {
-      setLoading(true);
-      // 変更点：クエリ名を from/to で呼び出す（api.ts仕様）
       const raw = await getReview({ from: start, to: end });
       setResult(normalize(raw));
     } catch (err: any) {
-      setError(err.message || 'データの取得に失敗しました');
+      setError(err?.message || 'データの取得に失敗しました');
     } finally {
       setLoading(false);
     }
   };
 
-  const totalCount = result ? (result.counts.anxiety + result.counts.boredom + result.counts.apathy + result.counts.flow) : 0;
+  const totalCount =
+    result ? (result.counts.flow + result.counts.anxiety + result.counts.boredom + result.counts.apathy) : 0;
+
   const ratio = (count: number) => (totalCount === 0 ? 0 : Math.round((count / totalCount) * 100));
 
   return (
     <div className="max-w-xl mx-auto">
-      {/* おしゃれ“戻る”ボタン（デザインは変更なし） */}
       <div className="sticky top-2 z-10 mb-4">
         <Link
           to="/"

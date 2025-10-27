@@ -20,3 +20,9 @@ yarn-error.log*
 
 # firebase
 .firebase/
+api/app_logs.txt
+api/logs.txt
+*.log
+logs/
+api/logs/
+api/app_logs/

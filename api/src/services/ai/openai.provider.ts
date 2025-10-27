@@ -1,53 +1,164 @@
-// OpenAI接続版（本番候補）。API障害時は安全フォールバック。
-export class OpenAIProvider {
-  private apiKey: string;
-  constructor(apiKey: string) { this.apiKey = apiKey; }
+// api/src/providers/openai.provider.ts
 
-  async evaluate(input: { challengeU: number; skillU: number; reasonU?: string }) {
-    // 1) 低リスクな初期値（障害時フォールバック）
-    const fallback = () => {
-      const aiChallenge = Math.max(1, Math.min(7, Math.round((input.challengeU + 2))));
-      const aiSkill = Math.max(1, Math.min(7, Math.round((input.skillU + 1))));
-      return {
-        aiChallenge, aiSkill,
-        aiComment: 'openai-fallback: 一時的に簡易評価を返しました。',
-        regoalAI: aiChallenge <= 2 ? '負荷を落として継続しよう' : undefined,
+// logger（無ければ console フォールバック）
+let info: (...a: any[]) => void = console.info.bind(console);
+let warn: (...a: any[]) => void = console.warn.bind(console);
+let error: (...a: any[]) => void = console.error.bind(console);
+try {
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  import("firebase-functions/logger").then((m) => {
+    info  = (m.info  ?? console.info ).bind(console);
+    warn  = (m.warn  ?? console.warn ).bind(console);
+    error = (m.error ?? console.error).bind(console);
+  });
+} catch {}
+
+export type EvalInput = {
+  goalId: string;
+  date: string;         // YYYY-MM-DD
+  challengeU: number;   // 1..7
+  skillU: number;       // 1..7
+  reasonU?: string;
+};
+
+export type EvalResult = {
+  aiChallenge?: number;
+  aiSkill?: number;
+  aiComment?: string;
+  regoalAI?: string;
+};
+
+function resolveOpenAIKey(override?: string): string | undefined {
+  if (override) return override;
+  return (
+    process.env.OPENAI_API_KEY ??
+    process.env.OPENAI_APIKEY ??
+    (() => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const f = require("firebase-functions");
+        const cfg = f?.config?.() ?? {};
+        return cfg?.openai?.api_key ?? undefined;
+      } catch { return undefined; }
+    })()
+  );
+}
+
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+const TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS ?? 10000);
+
+function clamp17(n?: unknown): number | undefined {
+  if (typeof n !== "number" || !Number.isFinite(n)) return undefined;
+  return Math.max(1, Math.min(7, Math.round(n)));
+}
+function fallback(_input: EvalInput): EvalResult {
+  return { aiComment: "openai-fallback: 一時的に簡易評価を返しました。" };
+}
+
+export async function evaluateRecordWithOpenAI(input: EvalInput): Promise<EvalResult> {
+  const key = resolveOpenAIKey();
+  if (!key) {
+    warn("openai: no api key (using fallback)");
+    return fallback(input);
+  }
+
+  info("openai: starting call", { goalId: input.goalId, date: input.date, model: MODEL });
+
+  const controller = new AbortController();
+  const to = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const system = [
+      "あなたはセルフコーチング用の短文評価アシスタントです。",
+      "ユーザー主観(1..7)を尊重しつつ補助的にAI評価(1..7)と短いコメントを返す。",
+      "出力は JSON オブジェクトのみ。キー: aiChallenge, aiSkill, aiComment, regoalAI。",
+      "aiChallenge/aiSkill は1..7の整数、aiCommentは80字以内、日本語。"
+    ].join("");
+
+    const user = [
+      `目標ID: ${input.goalId}`,
+      `日付: ${input.date}`,
+      `主観: challengeU=${input.challengeU}, skillU=${input.skillU}`,
+      input.reasonU ? `理由: ${input.reasonU}` : "",
+    ].filter(Boolean).join("\n");
+
+    const resp = await fetch(`${BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user }
+        ],
+        temperature: 0.2,
+        max_tokens: 220,
+        response_format: { type: "json_object" },
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(to);
+
+    if (!resp.ok) {
+      const t = await resp.text();
+      warn("openai-error", { status: resp.status, bodyPreview: t.slice(0, 300) });
+      return fallback(input);
+    }
+
+    const json = await resp.json() as any;
+    info("openai: response ok", { choices: String(json?.choices?.length ?? 0) });
+
+    const content: string =
+      json?.choices?.[0]?.message?.content ??
+      json?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments ??
+      "{}";
+
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      const mC = content.match(/aiChallenge"?\D+(\d)/i)?.[1];
+      const mS = content.match(/aiSkill"?\D+(\d)/i)?.[1];
+      parsed = {
+        aiChallenge: mC ? Number(mC) : undefined,
+        aiSkill: mS ? Number(mS) : undefined,
+        aiComment: content.slice(0, 120)
       };
+    }
+
+    const out: EvalResult = {
+      aiChallenge: clamp17(parsed.aiChallenge),
+      aiSkill: clamp17(parsed.aiSkill),
+      aiComment: (parsed.aiComment ?? "").toString().slice(0, 120) || undefined,
+      regoalAI: (parsed.regoalAI ?? "").toString().slice(0, 120) || undefined,
     };
 
+    info("openai:ok", { hasComment: !!out.aiComment });
+    return out;
+  } catch (e: any) {
+    warn("openai-call-failed", { message: e?.message });
+    return fallback(input);
+  }
+}
+
+/** class 互換（必要なら） */
+export class OpenAIProvider {
+  private key?: string;
+  constructor(apiKey?: string) { this.key = apiKey; }
+  async evaluateRecordWithOpenAI(input: EvalInput): Promise<EvalResult> {
+    const kOrig = process.env.OPENAI_API_KEY;
     try {
-      const { default: OpenAI } = await import('openai');
-      const client = new OpenAI({ apiKey: this.apiKey });
-
-      // プロンプトは簡素・非個人情報。数値出力の厳格化を誘導。
-      const sys = 'You are an assistant that outputs short, safe coaching hints in Japanese.';
-      const usr =
-        `挑戦度:${input.challengeU} 能力度:${input.skillU} 理由:${input.reasonU ?? ''}\n` +
-        '1..7の整数で aiChallenge, aiSkill を推定し、短い日本語コメントを返して。' +
-        'JSONで {"aiChallenge":n,"aiSkill":n,"aiComment":"...","regoalAI":"...?"} の形。';
-
-      const resp = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }],
-        temperature: 0.2,
-      });
-
-      const text = resp.choices?.[0]?.message?.content || '';
-      // ラフにJSON抽出（失敗時はfallback）
-      const json = text.match(/\{[\s\S]*\}/)?.[0];
-      if (!json) return fallback();
-
-      const parsed = JSON.parse(json);
-      const clamp = (n: number) => Math.max(1, Math.min(7, Number(n) || 1));
-      return {
-        aiChallenge: clamp(parsed.aiChallenge),
-        aiSkill: clamp(parsed.aiSkill),
-        aiComment: String(parsed.aiComment || '短評なし').slice(0, 200),
-        regoalAI: parsed.regoalAI ? String(parsed.regoalAI).slice(0, 120) : undefined,
-      };
-    } catch {
-      return fallback();
+      if (this.key) process.env.OPENAI_API_KEY = this.key;
+      return await evaluateRecordWithOpenAI(input);
+    } finally {
+      if (this.key) process.env.OPENAI_API_KEY = kOrig;
     }
   }
 }
-export default OpenAIProvider;
+
+export default { evaluateRecordWithOpenAI };

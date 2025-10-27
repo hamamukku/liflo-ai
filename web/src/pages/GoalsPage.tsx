@@ -1,57 +1,83 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { listGoals, saveGoal, type Goal, type GoalStatus } from '../app/api';
+// web/src/pages/GoalsPage.tsx
+import React, { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import { listGoals, saveGoal, type Goal, type GoalStatus } from '../app/api'
 
-const isActive = (s: GoalStatus | undefined) => s === 'active' || s === undefined;
-const renderStatus = (s: GoalStatus | undefined) =>
-  s === 1000 ? '達成' : s === 999 ? '中止' : '進行中';
+const isActive = (s: GoalStatus | undefined) => s === 'active' || s === undefined
+const renderStatus = (s: GoalStatus | undefined) => (s === 1000 ? '達成' : s === 999 ? '中止' : '進行中')
+
+type LocState = { created?: Goal } | null
 
 const GoalsPage: React.FC = () => {
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const location = useLocation()
+  const locState = (location.state as LocState) || null
 
-  // listGoals() が「配列」でも「{items: 配列}」でも正しく配列に正規化
-  const normalizeGoals = (res: unknown): Goal[] => {
-    if (Array.isArray(res)) return res as Goal[];
-    if (res && typeof res === 'object' && Array.isArray((res as any).items)) {
-      return (res as any).items as Goal[];
-    }
-    return [];
-  };
+  // created を初期に保持（未反映でも消えない）
+  const [goals, setGoals] = useState<Goal[]>(() => (locState?.created ? [locState.created] : []))
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const fetchGoals = async () => {
+  const mergeById = (base: Goal[], incoming: Goal[]) => {
+    const map = new Map<string, Goal>(base.map(g => [g.id, g]))
+    for (const g of incoming) map.set(g.id, g)
+    return Array.from(map.values())
+  }
+
+  const backoffs = useMemo(() => [400, 1100, 2200], [])
+
+  const fetchGoalsOnce = async () => {
+    const { items } = await listGoals()
+    return items
+  }
+
+  const fetchWithBackoff = async () => {
+    setLoading(true); setError('')
+    let current = goals
     try {
-      setLoading(true);
-      setError('');
-      const res = await listGoals();
-      setGoals(normalizeGoals(res));
-    } catch (err: any) {
-      setError(err?.message || '目標の取得に失敗しました');
-      setGoals([]); // 防御
-    } finally {
-      setLoading(false);
-    }
-  };
+      const g1 = await fetchGoalsOnce()
+      current = mergeById(current, g1)
+      setGoals(current)
 
-  useEffect(() => { fetchGoals(); }, []);
+      for (const ms of backoffs) {
+        await new Promise(r => setTimeout(r, ms))
+        const gi = await fetchGoalsOnce()
+        const next = mergeById(current, gi)
+        if (next.length !== current.length || next.some((n, i) => n.id !== current[i]?.id)) {
+          current = next
+          setGoals(current)
+        }
+      }
+    } catch (err: any) {
+      // ★ エラーでも一覧を空にしない
+      setError(err?.message || '目標の取得に失敗しました')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchWithBackoff() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
 
   const handleMarkStatus = async (goal: Goal, newStatus: 1000 | 999) => {
-    const promptMsg = newStatus === 1000 ? '達成した理由を入力してください' : '中止した理由を入力してください';
-    const reason = (window.prompt(promptMsg, '') || '').trim();
-    if (!reason) return;
+    const promptMsg = newStatus === 1000 ? '達成した理由を入力してください' : '中止した理由を入力してください'
+    const reason = (window.prompt(promptMsg, '') || '').trim()
+    if (!reason) return
 
     try {
-      await saveGoal({ id: goal.id, status: newStatus, reasonU: reason });
-      await fetchGoals();
+      await saveGoal({ id: goal.id, status: newStatus, reasonU: reason })
+      // 軽い再同期（即時 + 600ms後）
+      const { items } = await listGoals()
+      setGoals(prev => mergeById(prev, items))
+      setTimeout(async () => {
+        const { items: again } = await listGoals()
+        setGoals(prev => mergeById(prev, again))
+      }, 600)
     } catch (err: any) {
-      window.alert(err?.message || '更新に失敗しました');
+      window.alert(err?.message || '更新に失敗しました')
     }
-  };
+  }
 
   return (
     <div>
-      {/* 戻るUI（既存クラスのまま） */}
       <div className="sticky top-2 z-10 mb-4">
         <Link
           to="/"
@@ -85,17 +111,11 @@ const GoalsPage: React.FC = () => {
                 )}
               </div>
               <div className="space-y-2 text-right">
-                <Link to={`/goal/${g.id}`} className="inline-block bg-blue-600 hover:bg-blue-500 text-white text-lg px-3 py-2 rounded">
-                  編集
-                </Link>
+                <Link to={`/goal/${g.id}`} className="inline-block bg-blue-600 hover:bg-blue-500 text-white text-lg px-3 py-2 rounded">編集</Link>
                 {isActive(g.status) && (
                   <>
-                    <button onClick={() => handleMarkStatus(g, 1000)} className="block w-full bg-green-600 hover:bg-green-500 text-white text-lg px-3 py-2 rounded">
-                      達成
-                    </button>
-                    <button onClick={() => handleMarkStatus(g, 999)} className="block w-full bg-red-600 hover:bg-red-500 text-white text-lg px-3 py-2 rounded">
-                      中止
-                    </button>
+                    <button onClick={() => handleMarkStatus(g, 1000)} className="block w-full bg-green-600 hover:bg-green-500 text-white text-lg px-3 py-2 rounded">達成</button>
+                    <button onClick={() => handleMarkStatus(g, 999)} className="block w-full bg-red-600 hover:bg-red-500 text-white text-lg px-3 py-2 rounded">中止</button>
                   </>
                 )}
               </div>
@@ -105,7 +125,7 @@ const GoalsPage: React.FC = () => {
         {goals.length === 0 && !loading && <p className="text-lg">まだ目標がありません。</p>}
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default GoalsPage;
+export default GoalsPage

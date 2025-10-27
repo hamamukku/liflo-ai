@@ -1,145 +1,201 @@
 // api/src/config/providers.ts
-import { env } from "./env.js";
-import { MockAIProvider } from "../services/ai/mock.provider.js";
-import { OpenAIProvider } from "../services/ai/openai.provider.js";
+// 目的: 既存コード互換 (repos / getRepos / ai / logSink を named export)
+// - logSink は append(events) / flush() を提供し、auth.controller.ts の
+//   `void logSink.append([ ... ])` を満たす。
+// - 余計な依存を増やさず、存在する場合のみリポジトリ/AI実装を動的解決。
+// - 見つからない場合でも安全なスタブにフォールバック。
 
-// 常時使うメモリ実装のみ静的 import（安全フォールバック）
-import { goalsMem, recordsMem, usersMem } from "../repositories/memory/index.js";
+type AnyRecord = Record<string, any>;
+type LogEvent = AnyRecord;
+type LogSink = { append: (events: LogEvent[] | LogEvent) => Promise<void>; flush: () => Promise<void> };
 
-// ===== Logging Sinks =====
-import type { ILogSink } from "../logs/index.js";
-import { ConsoleSink } from "../logs/console.sink.js";
-import { SheetsSink } from "../logs/sheets.sink.js";
-import { LogQueue } from "../logs/queue.js";
+const ENV = process.env as AnyRecord;
 
-/** ---------------------------------------------------------
- *  Repositories Resolver（DBごとに “必要になった時だけ” 読み込む）
- *  --------------------------------------------------------- */
-async function resolveRepos() {
-  try {
-    if (env.DB_PROVIDER === "firestore") {
-      const fs = await import("../repositories/firestore/index.js");
-      return {
-        goals: fs.goalsFirestore,
-        records: fs.recordsFirestore,
-        users: fs.usersFirestore,
-      };
-    }
-    if (env.DB_PROVIDER === "postgres") {
-      const pg = await import("../repositories/postgres/index.js");
-      return {
-        goals: pg.goalsPostgres,
-        records: pg.recordsPostgres,
-        users: pg.usersPostgres,
-      };
-    }
-  } catch (e) {
-    console.warn("[providers] repo resolve failed, fallback to memory:", e);
-  }
-  // フォールバック：メモリ
-  return { goals: goalsMem, records: recordsMem, users: usersMem };
-}
-
-// Node.js 22 + ESM なので TLA が使える
-export const repos = await resolveRepos();
-
-/** ---------------------------------------------------------
- *  AI Provider
- *  --------------------------------------------------------- */
-export const ai =
-  env.AI_PROVIDER === "openai" && env.OPENAI_API_KEY
-    ? new OpenAIProvider(env.OPENAI_API_KEY)
-    : new MockAIProvider();
-
-/** ---------------------------------------------------------
- *  Sheets 資格情報の両対応（email/privateKey or base64 JSON）
- *  --------------------------------------------------------- */
-type GoogleSA = { client_email?: string; private_key?: string };
-
-function resolveSheetsCreds() {
-  // シートIDはどちらの名前でも拾う
-  const spreadsheetId =
-    (env as any).SHEETS_SPREADSHEET_ID ||
-    process.env.GOOGLE_SHEET_ID ||
-    (env as any).GOOGLE_SHEET_ID;
-
-  let email =
-    (env as any).GOOGLE_SERVICE_ACCOUNT_EMAIL ||
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-
-  let privateKey =
-    (env as any).GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ||
-    process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-
-  // base64 JSON から復元（優先度は既存の email/key より下）
-  const b64 =
-    process.env.GOOGLE_CREDENTIALS_JSON_BASE64 ||
-    (env as any).GOOGLE_CREDENTIALS_JSON_BASE64;
-  if ((!email || !privateKey) && b64) {
+/* -------------------- dynamic import helper -------------------- */
+async function tryImport(candidates: string[]) {
+  for (const p of candidates) {
     try {
-      const decoded = Buffer.from(b64, "base64").toString("utf8");
-      const j = JSON.parse(decoded) as GoogleSA;
-      email = email || j.client_email || "";
-      privateKey = privateKey || j.private_key || "";
-    } catch (e) {
-      console.warn("[providers] failed to decode GOOGLE_CREDENTIALS_JSON_BASE64:", e);
+      // eslint-disable-next-line no-await-in-loop
+      return await import(p);
+    } catch {}
+  }
+  return null;
+}
+
+/* -------------------- Repositories -------------------- */
+type ReposShape = { goals: AnyRecord; records: AnyRecord; users: AnyRecord };
+let reposMemo: ReposShape | null = null;
+
+async function _resolveRepos(): Promise<ReposShape> {
+  const kind = String(ENV.DB_PROVIDER || "").toLowerCase();
+
+  // Firestore 優先（index 統合形 / 個別 repo の両方に対応）
+  if (kind === "firestore") {
+    const idx = await tryImport([
+      "../repositories/firestore/index.js",
+      "../repositories/firestore/index.ts",
+      "../repositories/firestore/index",
+    ]);
+    if (idx?.goalsFirestore && idx?.recordsFirestore && idx?.usersFirestore) {
+      return { goals: idx.goalsFirestore, records: idx.recordsFirestore, users: idx.usersFirestore };
+    }
+    const goals = await tryImport([
+      "../repositories/firestore/goals.repo.js",
+      "../repositories/firestore/goals.repo.ts",
+      "../repositories/firestore/goals.repo",
+    ]);
+    const records = await tryImport([
+      "../repositories/firestore/records.repo.js",
+      "../repositories/firestore/records.repo.ts",
+      "../repositories/firestore/records.repo",
+    ]);
+    const users = await tryImport([
+      "../repositories/firestore/users.repo.js",
+      "../repositories/firestore/users.repo.ts",
+      "../repositories/firestore/users.repo",
+    ]);
+    if (goals || records || users) {
+      return {
+        goals: goals?.goalsFirestore ?? {},
+        records: records?.recordsFirestore ?? {},
+        users: users?.usersFirestore ?? {},
+      };
     }
   }
 
-  return { spreadsheetId, email, privateKey };
-}
-
-/** ---------------------------------------------------------
- *  Log Sink Provider（Console / Sheets / Noop）
- *  --------------------------------------------------------- */
-class NoopSink implements ILogSink {
-  async append(): Promise<void> {
-    /* noop */
+  // Postgres など（存在すれば）
+  if (kind === "postgres") {
+    const mod = await tryImport([
+      "../repositories/postgres/index.js",
+      "../repositories/postgres/index.ts",
+      "../repositories/postgres/index",
+    ]);
+    if (mod) {
+      return {
+        goals: mod.goalsPostgres ?? {},
+        records: mod.recordsPostgres ?? {},
+        users: mod.usersPostgres ?? {},
+      };
+    }
   }
+
+  // Memory fallback（存在しない場合は空スタブ）
+  const mem = await tryImport([
+    "../repositories/memory/index.js",
+    "../repositories/memory/index.ts",
+    "../repositories/memory/index",
+  ]);
+  if (mem) return { goals: mem.goalsMem ?? {}, records: mem.recordsMem ?? {}, users: mem.usersMem ?? {} };
+
+  console.warn("[providers] no repository modules found, using empty stubs");
+  return { goals: {}, records: {}, users: {} };
 }
 
-const { spreadsheetId, email: saEmail, privateKey: saPrivateKey } = resolveSheetsCreds();
-const hasSheetsCreds = !!spreadsheetId && !!saEmail && !!saPrivateKey;
-
-const selectedSink = (env as any).LOG_SINK || (hasSheetsCreds ? "sheets" : "console");
-
-let baseSink: ILogSink;
-switch (selectedSink) {
-  case "sheets":
-    baseSink = hasSheetsCreds
-      ? new SheetsSink(
-          spreadsheetId!,
-          (env as any).SHEETS_TAB_PREFIX,
-          saEmail!,
-          saPrivateKey!
-        )
-      : new ConsoleSink();
-    break;
-  case "console":
-    baseSink = new ConsoleSink();
-    break;
-  case "none":
-  default:
-    baseSink = new NoopSink();
-    break;
+export async function getRepos(): Promise<ReposShape> {
+  if (reposMemo) return reposMemo;
+  reposMemo = await _resolveRepos();
+  return reposMemo;
 }
 
-// env は string 想定なので数値に変換
-const batchSize = Number((env as any).SHEETS_BATCH_SIZE ?? "20");
-const flushIntervalMs = Number((env as any).SHEETS_FLUSH_INTERVAL_MS ?? "3000");
+/** 遅延解決プロキシ（既存呼び出し互換: repos.records.create(...) 等で使える） */
+export const repos: any = new Proxy(
+  {},
+  {
+    get(_t, repoKey: string | symbol) {
+      return new Proxy(
+        {},
+        {
+          get(_t2, methodKey: string | symbol) {
+            return async (...args: any[]) => {
+              const r = await getRepos();
+              const repo = (r as any)[repoKey as any];
+              const fn = repo?.[methodKey as any];
+              if (typeof fn !== "function") {
+                throw new Error(`[providers.repos] method not found: ${String(repoKey)}.${String(methodKey)}`);
+              }
+              return await fn.apply(repo, args);
+            };
+          },
+        }
+      );
+    },
+  }
+);
 
-// バッチ＆リトライ付きログキュー
-export const logSink: ILogSink = new LogQueue({
-  sink: baseSink,
-  batchSize,
-  flushIntervalMs,
-});
+/* ---------------------- AI Provider ---------------------- */
+let aiMemo: any | null = null;
+async function _resolveAI(): Promise<any> {
+  const kind = String(ENV.AI_PROVIDER || "").toLowerCase();
+  if (kind === "openai") {
+    const mod = await tryImport([
+      "../services/ai/openai.provider.js",
+      "../services/ai/openai.provider.ts",
+      "../services/ai/openai.provider",
+    ]);
+    if (mod?.OpenAIProvider) {
+      return new mod.OpenAIProvider(ENV.OPENAI_API_KEY);
+    }
+  }
+  // Mock fallback（プロジェクトに mock があればそれを使い、無ければ最小実装）
+  const mock = await tryImport([
+    "../services/ai/mock.provider.js",
+    "../services/ai/mock.provider.ts",
+    "../services/ai/mock.provider",
+  ]);
+  if (mock?.MockAIProvider) return new mock.MockAIProvider();
+  return {
+    async evaluate() { return null; },
+    async evaluateRecordWithOpenAI() { return null; },
+  };
+}
 
-/** ---------------------------------------------------------
- *  Export Aggregates
- *  --------------------------------------------------------- */
-export const providers = {
-  repos,
-  ai,
-  logSink,
+/** 既存コードが期待する形（evaluateRecordWithOpenAI を提供） */
+export const ai = {
+  async evaluateRecordWithOpenAI(input: {
+    goalId: string; date: string; challengeU: number; skillU: number; reasonU?: string;
+  }) {
+    if (!aiMemo) aiMemo = await _resolveAI();
+    const prov = aiMemo;
+    if (typeof prov?.evaluateRecordWithOpenAI === "function") {
+      return prov.evaluateRecordWithOpenAI(input);
+    }
+    if (typeof prov?.evaluate === "function") {
+      return prov.evaluate(input);
+    }
+    return null;
+  },
 };
+
+/* ---------------------- logSink ---------------------- */
+/**
+ * 既存呼び出し互換:
+ *   void logSink.append([{ ts, requestId, userId, endpoint, method, event, status, ... }])
+ * flush() は No-Op。依存を増やさず console へ安全出力。
+ * 必要なら後で Firestore/Sheets 版に差し替えてもインターフェイスは不変。
+ */
+export const logSink: LogSink = {
+  async append(events: LogEvent[] | LogEvent) {
+    const arr = Array.isArray(events) ? events : [events];
+    for (const e of arr) {
+      try {
+        const ts = e?.ts ?? new Date().toISOString();
+        const sev =
+          e?.severity ||
+          (e?.status === "error" ? "ERROR" : e?.status === "warn" ? "WARN" : "INFO");
+        const line = JSON.stringify({ ...e, ts, severity: sev });
+        if (sev === "ERROR") console.error("[logSink]", line);
+        else if (sev === "WARN") console.warn("[logSink]", line);
+        else console.log("[logSink]", line);
+      } catch {
+        // ここで落ちないように丸める
+        console.log("[logSink]", "[malformed event]");
+      }
+    }
+  },
+  async flush() {
+    /* no-op */
+  },
+};
+
+/* まとめ（既存互換の集約オブジェクトも提供） */
+export const providers = { getRepos, repos, ai, logSink };

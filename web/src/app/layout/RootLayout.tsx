@@ -1,18 +1,14 @@
+// web/src/app/layout/RootLayout.tsx
 import React from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../providers/AuthProvider';
 
-/**
- * RootLayout
- * - ヘッダーを薄型化（py-2）して、下の「ログイン」バーと同じくらいの高さに調整
- * - 文字は読みやすさを確保しつつ高さを抑えるため text-xl / leading-6 を採用
- */
 const RootLayout: React.FC = () => {
   const { user, logout } = useAuth();
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* 薄いヘッダー（上部青帯） */}
+      {/* ヘッダー */}
       <header className="bg-blue-600 text-white py-2">
         <div className="container mx-auto flex justify-between items-center">
           <h1 className="text-xl font-semibold leading-6">
@@ -21,7 +17,7 @@ const RootLayout: React.FC = () => {
           {user && (
             <div className="flex items-center gap-3">
               <span className="text-sm md:text-base leading-6">
-                こんにちは、{user.nickname}さん
+                こんにちは、{(user as any).nickname ?? 'ユーザー'}さん
               </span>
               <button
                 onClick={logout}
@@ -34,17 +30,17 @@ const RootLayout: React.FC = () => {
         </div>
       </header>
 
-      {/* 下の薄いバー（ログイン/ナビ） */}
+      {/* ナビゲーション */}
       <nav className="bg-blue-50 border-b border-blue-200">
-        <div className="container mx-auto flex flex-wrap space-x-4 py-2">
+        <div className="container mx-auto flex flex-wrap gap-4 py-2">
           {user ? (
             <>
               <NavLink
                 to="/"
+                end
                 className={({ isActive }) =>
                   `text-lg ${isActive ? 'font-bold text-blue-600' : 'text-blue-800'}`
                 }
-                end
               >
                 ホーム
               </NavLink>
@@ -83,24 +79,28 @@ const RootLayout: React.FC = () => {
             </>
           ) : (
             <NavLink
-  to="/login"
-  className={({ isActive }) =>
-    `text-lg ${isActive ? 'font-bold text-blue-600' : 'text-blue-800'}`
-  }
-  aria-label="ログインまたは新規会員登録"
-  title="ログイン/新規会員登録"
->
-  ログイン/新規会員登録
-</NavLink>
+              to="/login"
+              className={({ isActive }) =>
+                `text-lg ${isActive ? 'font-bold text-blue-600' : 'text-blue-800'}`
+              }
+              aria-label="ログインまたは新規会員登録"
+              title="ログイン/新規会員登録"
+            >
+              ログイン/新規登録
+            </NavLink>
           )}
         </div>
       </nav>
 
+      {/* コンテンツ */}
       <main className="flex-1 container mx-auto p-4">
         <Outlet />
       </main>
 
-      <footer className="bg-gray-200 text-center py-4 text-sm">© 2025 Liflo</footer>
+      {/* フッター */}
+      <footer className="bg-gray-200 text-center py-4 text-sm">
+        © 2025 Liflo
+      </footer>
     </div>
   );
 };
