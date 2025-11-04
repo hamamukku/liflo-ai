@@ -1,43 +1,44 @@
-import React from 'react';
-import { Routes, Route } from 'react-router-dom';
-import RootLayout from './app/layout/RootLayout';
-import { AuthProvider } from './app/providers/AuthProvider';
-import { ProtectedRoute } from './app/features/auth/guards/ProtectedRoute';
+import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 
-// Pages
-import LoginPage from './pages/LoginPage';
-import HomePage from './pages/HomePage';
-import GoalsPage from './pages/GoalsPage';
-import GoalFormPage from './pages/GoalFormPage';
-import RecordNewPage from './pages/RecordNewPage';
-import ReviewPage from './pages/ReviewPage';
-import FlowTheoryPage from './pages/FlowTheoryPage';
-import NotFoundPage from './pages/NotFoundPage';
+// 各ページをインポート
+import HomePage from "./pages/HomePage";
+import RecordPage from "./pages/RecordPage";
+import ReviewPage from "./pages/ReviewPage";
+import FlowTheoryPage from "./pages/FlowTheoryPage";
+import LoginPage from "./pages/LoginPage";
 
-/**
- * App defines the top-level routing configuration for the application. The
- * AuthProvider is placed here so that all routes have access to
- * authentication state. ProtectedRoute is used to wrap pages that require
- * authentication.
- */
-const App: React.FC = () => {
+// 404ページ（存在しないパス）
+function NotFoundPage() {
   return (
-    <AuthProvider>
-      <Routes>
-        <Route path="/" element={<RootLayout />}>
-          <Route index element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
-          <Route path="login" element={<LoginPage />} />
-          <Route path="goals" element={<ProtectedRoute><GoalsPage /></ProtectedRoute>} />
-          <Route path="goal/new" element={<ProtectedRoute><GoalFormPage /></ProtectedRoute>} />
-          <Route path="goal/:id" element={<ProtectedRoute><GoalFormPage /></ProtectedRoute>} />
-          <Route path="record" element={<ProtectedRoute><RecordNewPage /></ProtectedRoute>} />
-          <Route path="review" element={<ProtectedRoute><ReviewPage /></ProtectedRoute>} />
-          <Route path="flow-theory" element={<FlowTheoryPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Route>
-      </Routes>
-    </AuthProvider>
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 text-gray-800">
+      <div className="bg-white shadow-md rounded-lg p-8">
+        <h1 className="text-3xl font-bold mb-4">404 - ページが見つかりません</h1>
+        <p className="mb-4">存在しないURLにアクセスした可能性があります。</p>
+        <a href="/" className="text-blue-600 hover:underline">
+          ホームに戻る
+        </a>
+      </div>
+    </div>
   );
-};
+}
 
-export default App;
+// メインルーティング定義
+export default function App(): JSX.Element {
+  return (
+    <Routes>
+      {/* メインページ */}
+      <Route path="/" element={<HomePage />} />
+      <Route path="/record" element={<RecordPage />} />
+      <Route path="/review" element={<ReviewPage />} />
+      <Route path="/flow" element={<FlowTheoryPage />} />
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* リダイレクト（旧パスや誤入力用） */}
+      <Route path="/home" element={<Navigate to="/" replace />} />
+
+      {/* それ以外は全部 404 */}
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+  );
+}
