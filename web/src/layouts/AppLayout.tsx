@@ -18,11 +18,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {/* ===== ヘッダー ===== */}
       <header className="border-b border-liflo-border bg-liflo-light/70">
         <div className="max-w-5xl mx-auto w-full px-4 py-6">
-          {/* --- ロゴとタイトルを中央寄せ --- */}
-          <div className="flex flex-col items-center justify-center gap-2">
+          {/* --- ロゴとタイトルを中央寄せ・横並び --- */}
+          <div className="flex items-center justify-center gap-4">
+            {/* Lロゴ */}
             <div className="w-16 h-16 rounded-full bg-liflo-accent text-white flex items-center justify-center text-3xl font-bold shadow-card">
               L
             </div>
+
+            {/* タイトルテキスト */}
             <div className="text-center">
               <p className="text-3xl font-semibold leading-tight tracking-wide">Liflo</p>
               <p className="text-sm text-gray-600 tracking-wide">ライフロ</p>
