@@ -1,0 +1,13 @@
+/* Tailwind の元CSS（アプリはこのファイルを直接は読み込まない） */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 共通ユーティリティ（@apply はここでだけ使用OK） */
+@layer components {
+  .btn { @apply inline-flex items-center justify-center rounded-full px-4 py-2 font-medium transition; }
+  .btn-primary { @apply bg-liflo-accent text-white hover:bg-liflo-accent700; }
+  .card { @apply bg-liflo-paper border border-liflo-border rounded-2xl shadow-card; }
+  .tab { @apply rounded-md border border-transparent px-4 py-2; }
+  .tab-active { @apply bg-liflo-tab border-liflo-border; }
+}
