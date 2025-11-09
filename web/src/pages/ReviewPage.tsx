@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppLayout from "../layouts/AppLayout";
 
 type RecordItem = {
@@ -7,42 +7,55 @@ type RecordItem = {
   createdAt: string;
 };
 
+const STORAGE_KEY = "liflo_records";
+
 export default function ReviewPage() {
   const [records, setRecords] = useState<RecordItem[]>([]);
 
-  // ✅ ページ表示時に localStorage から取得
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("liflo_records");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setRecords(parsed);
-        } else {
-          console.warn("記録データが不正です", parsed);
-        }
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setRecords(parsed);
       }
-    } catch (e) {
-      console.error("localStorage 読み込み失敗:", e);
+    } catch (error) {
+      console.error("Failed to load records:", error);
     }
   }, []);
 
+  const sortedRecords = useMemo(
+    () => [...records].sort((a, b) => Number(b.id) - Number(a.id)),
+    [records],
+  );
+
   return (
     <AppLayout>
-      <div className="bg-white p-6 rounded-xl shadow w-full">
-        <h2 className="text-xl font-bold mb-4">📊 振り返り</h2>
+      <div className="space-y-6">
+        <header>
+          <h2 className="text-2xl font-semibold text-liflo-accent">📊 振り返り</h2>
+          <p className="text-gray-700 mt-2">
+            ここには保存した記録が並びます。振り返りたい項目をカードから見返して、次のアクションに活かしましょう。
+          </p>
+        </header>
 
-        {records.length === 0 ? (
-          <p className="text-gray-600">まだ保存された記録がありません。</p>
+        {sortedRecords.length === 0 ? (
+          <p className="text-gray-600 bg-white border border-liflo-border rounded-xl p-4 text-center">
+            まだ保存された記録がありません。記録ページから最初のメモを残してみましょう。
+          </p>
         ) : (
-          <ul className="space-y-2">
-            {records.map((r) => (
-              <li key={r.id} className="border p-4 rounded-md">
-                <p className="text-gray-800">{r.text}</p>
-                <p className="text-sm text-gray-500 mt-1">保存日時：{r.createdAt}</p>
-              </li>
+          <div className="space-y-4">
+            {sortedRecords.map((record) => (
+              <article
+                key={record.id}
+                className="bg-white border border-liflo-border rounded-xl p-4 shadow-sm"
+              >
+                <p className="text-gray-800 whitespace-pre-line leading-relaxed">{record.text}</p>
+                <p className="text-sm text-gray-500 mt-3">記録日時：{record.createdAt}</p>
+              </article>
             ))}
-          </ul>
+          </div>
         )}
       </div>
     </AppLayout>

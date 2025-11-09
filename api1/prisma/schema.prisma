@@ -1,0 +1,63 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------
+// Liflo PoC 最小モデル（SQLite対応）
+// ------------------------------------------------------
+
+model User {
+  id        String   @id @default(cuid())
+  nickname  String   @unique
+  pinHash   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  goals   Goal[]
+  records Record[]
+}
+
+model Goal {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String
+  status    Int
+  reasonU   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  records Record[]
+
+  @@index([userId])
+}
+
+model Record {
+  id          String   @id @default(cuid())
+  userId      String
+  goalId      String
+  date        DateTime @default(now())
+  challengeU  Int
+  skillU      Int
+  reasonU     String?
+  aiChallenge Int @default(0)
+  aiSkill     Int @default(0)
+  aiComment   String @default("")
+  regoalAI    String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([goalId])
+  @@unique([userId, goalId, date])
+}
