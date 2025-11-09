@@ -1,106 +1,141 @@
-import React, { useState, useEffect } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import AppLayout from "../layouts/AppLayout";
 
 type Sender = "ai" | "user";
 type Message = { sender: Sender; text: string; suggestSave?: boolean };
 type RecordItem = { id: string; text: string; createdAt: string };
 
+const STORAGE_KEY = "liflo_records";
+
+const initialMessages: Message[] = [
+  {
+    sender: "ai",
+    text: "こんにちは！今日の出来事を振り返るお手伝いをしますね。",
+  },
+  {
+    sender: "ai",
+    text: "思い出に残ったことや感じたことを教えてください。入力が終わったら送信ボタンを押してください。",
+  },
+];
+
 export default function RecordPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    { sender: "ai", text: "こんにちは！今日の記録を始めましょう。" },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [records, setRecords] = useState<RecordItem[]>([]);
 
-  // ✅ localStorageから保存データ復元（初回のみ）
   useEffect(() => {
-    const raw = localStorage.getItem("liflo_records");
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setRecords(parsed);
-      } catch (e) {
-        console.error("localStorage parse error:", e);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setRecords(parsed);
       }
+    } catch (error) {
+      console.error("localStorage parse error:", error);
     }
   }, []);
 
-  // ✅ 保存処理（localStorageに即時反映）
+  const persistRecords = (nextRecords: RecordItem[]) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextRecords));
+  };
+
   const handleSave = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
     const newRecord: RecordItem = {
       id: Date.now().toString(),
-      text,
+      text: trimmed,
       createdAt: new Date().toLocaleString(),
     };
     const updated = [...records, newRecord];
     setRecords(updated);
-    localStorage.setItem("liflo_records", JSON.stringify(updated)); // ← ここが即保存の鍵
-
+    persistRecords(updated);
     setMessages((prev) => [
       ...prev,
       {
         sender: "ai",
-        text: "✅ 記録を保存しました！「振り返り」で確認できます。",
+        text: "記録を保存しました！振り返りページでいつでも確認できますよ。",
       },
     ]);
   };
 
-  // チャット送信
+  const handleSkip = () => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        sender: "ai",
+        text: "わかりました。また記録したくなったら声をかけてくださいね。",
+      },
+    ]);
+  };
+
   const handleSend = () => {
     const text = input.trim();
     if (!text) return;
     setMessages((prev) => [...prev, { sender: "user", text }]);
     setInput("");
-
     setTimeout(() => {
       setMessages((prev) => [
         ...prev,
         {
           sender: "ai",
-          text: "なるほど、これは今日の記録として保存しますか？",
+          text: "素敵な記録ですね。保存して振り返りに追加しておきますか？",
           suggestSave: true,
         },
       ]);
-    }, 400);
+    }, 350);
   };
 
-  // スキップ
-  const handleSkip = () => {
-    setMessages((prev) => [
-      ...prev,
-      { sender: "ai", text: "了解です。次の話題に進みましょう。" },
-    ]);
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    handleSend();
   };
 
   return (
     <AppLayout>
-      <main className="flex flex-col bg-white rounded-xl shadow h-[75vh] w-full">
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.map((m, i) => {
-            const latestUser = [...messages].slice(0, i).reverse().find((msg) => msg.sender === "user");
+      <div className="space-y-6">
+        <header>
+          <p className="text-xl font-semibold text-liflo-accent">🌱 今日の記録</p>
+          <p className="text-gray-700 mt-1">気持ちや出来事を気軽に残しましょう。短い言葉でもOKです。</p>
+          <p className="text-sm text-[#D9534F] mt-1">※ 個人情報やフルネームは避け、ニックネームで入力してください。</p>
+        </header>
+
+        <section className="bg-liflo-paper border border-liflo-border rounded-2xl p-4 shadow-card h-[55vh] overflow-y-auto space-y-3">
+          {messages.map((message, index) => {
+            const isUser = message.sender === "user";
+            const latestUser = (() => {
+              for (let i = index - 1; i >= 0; i -= 1) {
+                if (messages[i].sender === "user") {
+                  return messages[i];
+                }
+              }
+              return undefined;
+            })();
+
             return (
-              <div key={i} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
+              <div key={`${message.sender}-${index}-${message.text}`} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`px-4 py-2 rounded-2xl max-w-md whitespace-pre-wrap ${
-                    m.sender === "user"
-                      ? "bg-green-500 text-white"
-                      : "bg-gray-200 text-gray-800"
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
+                    isUser ? "bg-liflo-accent text-white shadow-card" : "bg-white border border-liflo-border text-gray-800"
                   }`}
                 >
-                  {m.text}
-                  {m.suggestSave && latestUser && (
-                    <div className="mt-2 flex gap-2">
+                  {message.text}
+                  {message.suggestSave && latestUser && (
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <button
+                        type="button"
                         onClick={() => handleSave(latestUser.text)}
-                        className="text-sm bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded"
+                        className="text-sm font-medium bg-liflo-accent text-white rounded-full px-4 py-1.5 hover:bg-liflo-accent700 transition-colors"
                       >
-                        ✔ 保存する
+                        💾 保存する
                       </button>
                       <button
+                        type="button"
                         onClick={handleSkip}
-                        className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1 rounded"
+                        className="text-sm font-medium border border-liflo-border text-gray-700 rounded-full px-4 py-1.5 hover:bg-liflo-tab transition-colors"
                       >
-                        ❌ スキップ
+                        スキップ
                       </button>
                     </div>
                   )}
@@ -108,23 +143,26 @@ export default function RecordPage() {
               </div>
             );
           })}
-        </div>
+        </section>
 
-        <div className="p-4 border-t flex gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="メッセージを入力..."
-            className="flex-1 border rounded-full px-4 py-2"
-          />
-          <button
-            onClick={handleSend}
-            className="bg-green-600 hover:bg-green-500 text-white rounded-full px-6 py-2"
-          >
-            送信
-          </button>
-        </div>
-      </main>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="flex items-center gap-3 border border-liflo-border bg-white rounded-full px-5 py-2 shadow-sm">
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="今日の出来事を入力..."
+              className="flex-1 bg-transparent outline-none text-gray-800 placeholder:text-gray-400"
+            />
+            <button
+              type="submit"
+              className="bg-liflo-accent hover:bg-liflo-accent700 text-white rounded-full px-6 py-2 text-sm font-semibold transition-colors"
+            >
+              送信
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 text-right">Enterキーでも送信できます</p>
+        </form>
+      </div>
     </AppLayout>
   );
 }
