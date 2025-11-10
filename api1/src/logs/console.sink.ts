@@ -1,4 +1,4 @@
-import type { ILogSink, LogRow } from './index';
+import type { ILogSink, LogRow } from "./index.js";
 
 /**
  * ConsoleSink writes log events to STDOUT. This sink is primarily intended for

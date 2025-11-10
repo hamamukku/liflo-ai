@@ -28,5 +28,5 @@ export interface IRecordsRepo {
 
 export interface IUsersRepo {
   findByNickname(nickname: string): Promise<User | null>;
-  create(input: { nickname: string; pinHash?: string; pinPlain?: string }): Promise<User>;
+  create(input: { nickname: string; pin: string }): Promise<User>;
 }

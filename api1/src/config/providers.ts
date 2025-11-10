@@ -64,7 +64,7 @@ async function _resolveRepos(): Promise<ReposShape> {
   }
 
   // Postgres など（存在すれば）
-  if (kind === "postgres") {
+  if (kind === "postgres" || kind === "prisma") {
     const mod = await tryImport([
       "../repositories/postgres/index.js",
       "../repositories/postgres/index.ts",

@@ -1,15 +1,15 @@
-/** 認証・所有者識別の最小単位 */
+/** Minimal representation of an authenticated user */
 export interface User {
   id: string;
   nickname: string;
-  /** 本番は Argon2 ハッシュ。PoCでは空の可能性あり（移行中想定） */
-  pinHash?: string;
-  createdAt?: string; // ISO-8601
-  lastLogin?: string; // ISO-8601
+  /** Argon2 hashed PIN */
+  pin?: string;
+  createdAt?: string;
+  lastLogin?: string;
 }
 
-/** 登録入力（任意機能） */
+/** Registration payload (hashing handled by the service layer) */
 export interface RegisterInput {
   nickname: string;
-  pin: string; // ハッシュ化はサービス層
+  pin: string;
 }

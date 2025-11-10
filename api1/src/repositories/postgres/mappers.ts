@@ -15,14 +15,13 @@ export const mapGoal = (row: any): Goal => ({
 export const mapUser = (row: any): User => ({
   id: row.id,
   nickname: row.nickname,
-  pinHash: row.pinHash,
+  pin: row.pin,
   createdAt: toIsoDateTime(row.createdAt),
 });
 
 export const mapRecord = (row: any): RecordEntry => ({
   id: row.id,
-  userId: row.userId,
-  text: row.text ?? row.reasonU ?? "",
+  text: row.text ?? "",
   aiComment: row.aiComment ?? null,
-  createdAt: toIsoDateTime(row.createdAt ?? row.date),
+  createdAt: toIsoDateTime(row.createdAt),
 });

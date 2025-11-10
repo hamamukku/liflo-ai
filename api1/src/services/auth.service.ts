@@ -1,29 +1,114 @@
-// api/src/services/auth.service.ts
+import type { Request, Response } from "express";
+import { PrismaClient } from "@prisma/client";
+import { hash, verify } from "argon2";
 import { randomUUID } from "node:crypto";
 
-/**
- * ãƒ­ã‚°ã‚¤ãƒ³ï¼šnickname/pin ã‚’å—ã‘å–ã‚Šã€ã‚«ã‚¹ã‚¿ãƒ ãƒˆãƒ¼ã‚¯ãƒ³ã¨ userId ã‚’è¿”ã™
- */
-export async function login(
-  nickname: string,
-  pin: string
-): Promise<{ customToken: string; userId: string }> {
-  // â€»ã“ã“ã§ã¯PoCç”¨ã®æœ€å°å®Ÿè£…ã€‚
-  // æœ¬æ¥ã¯DBã§ nickname/pin ã®ç…§åˆã‚’è¡Œã„ã€Firebase Custom Tokenç­‰ã‚’ç™ºè¡Œã™ã‚‹ã€‚
-  const base = Buffer.from(`${nickname}:${pin}`).toString("base64url");
-  const userId = `u_${Buffer.from(nickname).toString("hex").slice(0, 8)}`;
-  const customToken = `ct_${base}_${randomUUID()}`;
-  return { customToken, userId };
+const prisma = new PrismaClient();
+const PIN_PATTERN = /^[0-9]{4}$/;
+
+type AppError = Error & { status?: number };
+
+const ERROR_MESSAGES = {
+  invalidInput: "“ü—ÍŒ`®‚ª•s³‚Å‚·",
+  duplicateNickname: "‚±‚ÌƒjƒbƒNƒl[ƒ€‚ÍŠù‚Ég‚í‚ê‚Ä‚¢‚Ü‚·",
+  authFailed: "”FØ‚É¸”s‚µ‚Ü‚µ‚½",
+  serverError: "ƒT[ƒo[ƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½",
+} as const;
+
+function makeError(status: number, message: string): AppError {
+  const err = new Error(message) as AppError;
+  err.status = status;
+  return err;
+}
+
+function normalizeNickname(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizePin(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function createUserAccount(rawNickname: unknown, rawPin: unknown) {
+  const nickname = normalizeNickname(rawNickname);
+  const pin = normalizePin(rawPin);
+
+  if (!nickname || !PIN_PATTERN.test(pin)) {
+    throw makeError(400, ERROR_MESSAGES.invalidInput);
+  }
+
+  const existing = await prisma.user.findUnique({ where: { nickname } });
+  if (existing) {
+    throw makeError(400, ERROR_MESSAGES.duplicateNickname);
+  }
+
+  const hashed = await hash(pin);
+  return prisma.user.create({
+    data: { nickname, pin: hashed },
+    select: { id: true, nickname: true, createdAt: true },
+  });
+}
+
+function sendError(res: Response, status: number, message: string) {
+  return res.status(status).json({ status: "error", message, data: null });
 }
 
 /**
- * ç™»éŒ²ï¼šnickname/pin ã‚’å—ã‘å–ã‚Šã€userId ã‚’æ‰•ã„å‡ºã™
+ * V‹KƒAƒJƒEƒ“ƒgì¬
+ * - ƒjƒbƒNƒl[ƒ€‚Æ4Œ…PIN‚Å“o˜^
+ * - ƒjƒbƒNƒl[ƒ€d•¡‚ÍƒGƒ‰[
  */
-export async function register(
-  nickname: string,
-  pin: string
-): Promise<{ userId: string }> {
-  // â€»PoCç”¨ï¼šå®ŸDBä¿å­˜ã¯çœç•¥ã€‚ãƒ¦ãƒ‹ãƒ¼ã‚¯ãªIDã‚’è¿”ã™ã€‚
-  const userId = `u_${Buffer.from(nickname).toString("hex").slice(0, 8)}_${Date.now()}`;
-  return { userId };
+export async function signup(req: Request, res: Response) {
+  try {
+    const user = await createUserAccount(req.body?.nickname, req.body?.pin);
+    return res.json({ status: "success", message: "“o˜^Š®—¹", data: { user } });
+  } catch (error) {
+    const status = (error as AppError)?.status ?? 500;
+    const message =
+      status >= 500 ? ERROR_MESSAGES.serverError : (error as Error).message || ERROR_MESSAGES.invalidInput;
+    console.error("[auth] signup failed:", error);
+    return sendError(res, status, message);
+  }
 }
+
+/**
+ * Œ»İ‚Ìƒ†[ƒU[î•ñæ“¾ib’è”Åj
+ * - ”FØƒg[ƒNƒ“‹@”\’Ç‰Á—\’è
+ */
+export async function me(_req: Request, res: Response) {
+  return res.json({ status: "success", message: "ok", data: { user: null } });
+}
+
+/**
+ * Šù‘¶ƒRƒ“ƒgƒ[ƒ‰[ŒİŠ·Fnickname/pin ‚ğó‚¯æ‚èƒg[ƒNƒ“‚ğ•Ô‚·
+ */
+export async function login(nickname: string, pin: string): Promise<{ customToken: string; userId: string }> {
+  const normalizedNickname = normalizeNickname(nickname);
+  const normalizedPin = normalizePin(pin);
+
+  if (!normalizedNickname || !normalizedPin) {
+    throw makeError(400, ERROR_MESSAGES.invalidInput);
+  }
+
+  const user = await prisma.user.findUnique({ where: { nickname: normalizedNickname } });
+  if (!user || !user.pin) {
+    throw makeError(401, ERROR_MESSAGES.authFailed);
+  }
+
+  const ok = await verify(user.pin, normalizedPin);
+  if (!ok) {
+    throw makeError(401, ERROR_MESSAGES.authFailed);
+  }
+
+  const customToken = `ct_${user.id}_${randomUUID()}`;
+  return { customToken, userId: user.id };
+}
+
+/**
+ * Šù‘¶ƒRƒ“ƒgƒ[ƒ‰[ŒİŠ·F“o˜^API
+ */
+export async function register(nickname: string, pin: string): Promise<{ userId: string }> {
+  const user = await createUserAccount(nickname, pin);
+  return { userId: user.id };
+}
+

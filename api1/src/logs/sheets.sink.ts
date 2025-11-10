@@ -1,5 +1,5 @@
-import { google, sheets_v4 } from 'googleapis';
-import type { ILogSink, LogRow } from './index';
+import { google, sheets_v4 } from "googleapis";
+import type { ILogSink, LogRow } from "./index.js";
 
 /**
  * SheetsSink writes audit events to a Google Sheets document. Each month

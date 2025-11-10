@@ -22,7 +22,6 @@ function asRecord(doc: FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.Docu
   const data = doc.data() ?? {};
   return {
     id: doc.id,
-    userId: data.userId,
     text: data.text ?? "",
     aiComment: data.aiComment ?? null,
     createdAt: toIso(data.createdAt),
@@ -37,9 +36,9 @@ export const recordsFirestore: IRecordsRepo = {
     return asRecord(snapshot);
   },
 
-  async list(userId, opts) {
+  async list(_userId, opts) {
     ensureDb();
-    let query: FirebaseFirestore.Query = db!.collection(COL).where("userId", "==", userId);
+    let query: FirebaseFirestore.Query = db!.collection(COL);
     const order = (opts?.order ?? "desc").toLowerCase() === "asc" ? "asc" : "desc";
     query = query.orderBy("createdAt", order as FirebaseFirestore.OrderByDirection);
     if (opts?.limit) {
@@ -49,21 +48,19 @@ export const recordsFirestore: IRecordsRepo = {
     return snap.docs.map(asRecord);
   },
 
-  async findById(userId, id) {
+  async findById(_userId, id) {
     ensureDb();
     const docRef = db!.collection(COL).doc(id);
     const snapshot = await docRef.get();
     if (!snapshot.exists) return null;
-    if ((snapshot.data() as any)?.userId !== userId) return null;
     return asRecord(snapshot);
   },
 
-  async delete(userId, id) {
+  async delete(_userId, id) {
     ensureDb();
     const docRef = db!.collection(COL).doc(id);
     const snapshot = await docRef.get();
     if (!snapshot.exists) throw new Error("record_not_found");
-    if ((snapshot.data() as any)?.userId !== userId) throw new Error("record_forbidden");
     await docRef.delete();
   },
 };

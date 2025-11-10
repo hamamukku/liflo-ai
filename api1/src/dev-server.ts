@@ -1,6 +1,10 @@
+import dotenv from "dotenv";
 import app from "./server.js";
 
-const PORT = process.env.PORT || 3000;
+dotenv.config();
+
+const PORT = Number(process.env.PORT ?? 3000);
+
 app.listen(PORT, () => {
-  console.log(`✅ Liflo API running on http://localhost:${PORT}`);
+  console.log(`Liflo API running on http://localhost:${PORT}`);
 });

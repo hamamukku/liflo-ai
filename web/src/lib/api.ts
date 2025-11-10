@@ -13,11 +13,18 @@ export type RecordEntry = {
   createdAt: string;
 };
 
-export type ReviewStats = {
+export type ReviewFeed = {
+  items: RecordEntry[];
   total: number;
+};
+
+export type ReviewStats = {
+  totalEntries: number;
   last7Days: number;
   last30Days: number;
-  streak: number;
+  currentStreakDays: number;
+  lastRecordedAt: string | null;
+  averagePerWeek: number;
 };
 
 export type FlowTips = {
@@ -25,7 +32,7 @@ export type FlowTips = {
 };
 
 export type AuthUser = {
-  id: number;
+  id: string;
   nickname: string;
   createdAt: string;
 };
@@ -82,7 +89,7 @@ export const recordsApi = {
 };
 
 export const reviewApi = {
-  list: () => lifloFetch<RecordEntry[]>("/review"),
+  list: () => lifloFetch<ReviewFeed>("/review"),
   stats: () => lifloFetch<ReviewStats>("/review/stats"),
 };
 

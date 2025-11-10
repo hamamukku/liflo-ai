@@ -8,11 +8,10 @@ export const logger = pino({
   // 秘匿：Bearerやpin類、鍵は出さない
   redact: {
     paths: [
-      'req.headers.authorization',
-      'headers.authorization',
-      'body.pin',
-      'body.pinHash',
-      'FIREBASE_PRIVATE_KEY',
+      "req.headers.authorization",
+      "headers.authorization",
+      "body.pin",
+      "FIREBASE_PRIVATE_KEY",
     ],
     remove: true,
   },

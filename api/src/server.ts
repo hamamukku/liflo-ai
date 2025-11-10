@@ -23,6 +23,7 @@ import { AuthService } from "./modules/auth/service";
 import { AuthController } from "./modules/auth/controller";
 import { createAuthRouter } from "./modules/auth/routes";
 import { createAuthGuard } from "./middlewares/auth.guard";
+import authRouter from "./routes/auth.routes";
 
 dotenv.config();
 
@@ -74,9 +75,12 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan("dev"));
+// ---- Auth lightweight router (先頭でマウント) ----
+app.use("/api/auth", authRouter);
 
 const apiRouter = express.Router();
-apiRouter.use("/auth", createAuthRouter(authController, authGuard));
+// ---- 既存のモジュールルータをコメントアウト ----
+// apiRouter.use("/auth", createAuthRouter(authController, authGuard));
 apiRouter.use("/goals", authGuard, createGoalsRouter(goalsController));
 apiRouter.use("/records", authGuard, createRecordsRouter(recordsController));
 apiRouter.use("/review", authGuard, createReviewRouter(reviewController));

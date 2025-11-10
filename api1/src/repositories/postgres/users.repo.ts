@@ -9,7 +9,7 @@ export const usersPostgres: IUsersRepo = {
     return u ? mapUser(u) : null;
   },
 
-  async create(data: { nickname: string; pinHash: string }): Promise<User> {
+  async create(data: { nickname: string; pin: string }): Promise<User> {
     const u = await prisma.user.create({ data });
     return mapUser(u);
   },
