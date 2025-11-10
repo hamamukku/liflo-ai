@@ -2,21 +2,27 @@ import { randomUUID } from "crypto";
 import { RecordEntry } from "../../modules/records/model";
 import { RecordRepository } from "../types";
 
-export class MemoryRecordRepository implements RecordRepository {
-  private records: RecordEntry[] = [];
+type StoredRecord = RecordEntry & { userId: number };
 
-  async list(): Promise<RecordEntry[]> {
-    return [...this.records];
+export class MemoryRecordRepository implements RecordRepository {
+  private records: StoredRecord[] = [];
+
+  async list(userId: number): Promise<RecordEntry[]> {
+    return this.records
+      .filter((record) => record.userId === userId)
+      .map(({ userId: _userId, ...rest }) => rest);
   }
 
-  async create(text: string): Promise<RecordEntry> {
+  async create(userId: number, text: string): Promise<RecordEntry> {
     const now = new Date().toISOString();
-    const record: RecordEntry = {
+    const record: StoredRecord = {
       id: randomUUID(),
       text,
       createdAt: now,
+      userId,
     };
     this.records.push(record);
-    return record;
+    const { userId: _userId, ...rest } = record;
+    return rest;
   }
 }

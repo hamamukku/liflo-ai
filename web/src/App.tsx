@@ -5,6 +5,8 @@ import RecordPage from "./pages/RecordPage";
 import ReviewPage from "./pages/ReviewPage";
 import FlowTheoryPage from "./pages/FlowTheoryPage";
 import LoginPage from "./pages/LoginPage";
+import SignupPage from "./pages/SignupPage";
+import { ProtectedRoute } from "./app/features/auth/guards/ProtectedRoute";
 
 function NotFoundPage() {
   return (
@@ -24,11 +26,40 @@ export default function App(): ReactElement {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/goals" replace />} />
-      <Route path="/goals" element={<GoalsPage />} />
-      <Route path="/record" element={<RecordPage />} />
-      <Route path="/review" element={<ReviewPage />} />
-      <Route path="/flow" element={<FlowTheoryPage />} />
+      <Route
+        path="/goals"
+        element={
+          <ProtectedRoute>
+            <GoalsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/record"
+        element={
+          <ProtectedRoute>
+            <RecordPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/review"
+        element={
+          <ProtectedRoute>
+            <ReviewPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/flow"
+        element={
+          <ProtectedRoute>
+            <FlowTheoryPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

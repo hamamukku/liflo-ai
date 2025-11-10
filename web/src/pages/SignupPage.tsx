@@ -1,30 +1,13 @@
-import { FormEvent, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../app/providers/AuthProvider";
+import { FormEvent, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { authApi } from "../lib/api";
 
-export default function LoginPage() {
-  const { user, login, loading } = useAuth();
+export default function SignupPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const [nickname, setNickname] = useState("");
   const [pin, setPin] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    const state = location.state as { signupMessage?: string } | null;
-    if (state?.signupMessage) {
-      setInfoMessage(state.signupMessage);
-      navigate(location.pathname, { replace: true, state: null });
-    }
-  }, [location, navigate]);
-
-  useEffect(() => {
-    if (user) {
-      navigate("/goals", { replace: true });
-    }
-  }, [user, navigate]);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -32,30 +15,27 @@ export default function LoginPage() {
       setError("ニックネームと4桁のPINを入力してください。");
       return;
     }
+
     setSubmitting(true);
     setError(null);
     try {
-      await login(nickname.trim(), pin);
-      navigate("/goals", { replace: true });
+      await authApi.signup({ nickname: nickname.trim(), pin });
+      navigate("/login", {
+        replace: true,
+        state: { signupMessage: "登録が完了しました。ログインしてください。" },
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "ログインに失敗しました。");
+      setError(
+        err instanceof Error ? err.message : "登録に失敗しました。時間を置いて再度お試しください。"
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
   const handlePinChange = (value: string) => {
-    const onlyDigits = value.replace(/\D/g, "").slice(0, 4);
-    setPin(onlyDigits);
+    setPin(value.replace(/\D/g, "").slice(0, 4));
   };
-
-  if (loading && !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-liflo-light text-gray-700">
-        認証情報を確認しています...
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-liflo-light px-4">
@@ -64,17 +44,11 @@ export default function LoginPage() {
           <div className="w-16 h-16 mx-auto rounded-full bg-liflo-accent text-white flex items-center justify-center text-3xl font-bold shadow-card">
             L
           </div>
-          <h1 className="text-2xl font-semibold text-gray-900">Liflo へようこそ</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">はじめての方</h1>
           <p className="text-gray-600 text-sm">
-            ニックネームと4桁の数字だけでログインできます。初めての方は新規登録をご利用ください。
+            ニックネームと4桁の数字だけで、すぐにアカウントを作れます。
           </p>
         </div>
-
-        {infoMessage && (
-          <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-center">
-            {infoMessage}
-          </p>
-        )}
 
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-center">
@@ -95,7 +69,7 @@ export default function LoginPage() {
               onChange={(event) => setNickname(event.target.value)}
               placeholder="例）たろう"
               maxLength={20}
-              className="w-full border border-liflo-border rounded-2xl px-5 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-liflo-accent"
+              className="w-full border border-liflo-border rounded-2xl px-5 py-4 text-xl focus:outline-none focus:ring-2 focus:ring-liflo-accent"
             />
           </div>
 
@@ -113,23 +87,23 @@ export default function LoginPage() {
               onChange={(event) => handlePinChange(event.target.value)}
               placeholder="1234"
               maxLength={4}
-              className="w-full border border-liflo-border rounded-2xl px-5 py-3 text-lg tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-liflo-accent text-center"
+              className="w-full border border-liflo-border rounded-2xl px-5 py-4 text-2xl tracking-[0.5em] text-center focus:outline-none focus:ring-2 focus:ring-liflo-accent"
             />
             <p className="text-xs text-gray-500 mt-1">数字のみ。忘れない番号を設定してください。</p>
           </div>
 
           <button
             type="submit"
-            disabled={submitting || loading}
-            className="w-full bg-liflo-accent hover:bg-liflo-accent700 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-2xl py-3 text-lg font-semibold shadow-card transition-colors"
+            disabled={submitting}
+            className="w-full bg-liflo-accent hover:bg-liflo-accent700 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-2xl py-4 text-xl font-semibold shadow-card transition-colors"
           >
-            {submitting ? "ログイン中..." : "ログイン"}
+            {submitting ? "登録中..." : "アカウントを作成"}
           </button>
         </form>
 
         <div className="text-center">
-          <Link to="/signup" className="text-liflo-accent underline font-medium text-lg">
-            はじめての方はこちら
+          <Link to="/login" className="text-liflo-accent underline font-medium text-lg">
+            すでに登録済みの方はこちら
           </Link>
         </div>
       </div>

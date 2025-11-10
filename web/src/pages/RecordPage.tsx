@@ -1,63 +1,60 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "../layouts/AppLayout";
+import { recordsApi } from "../lib/api";
 
 type Sender = "ai" | "user";
-type Message = { sender: Sender; text: string; suggestSave?: boolean };
-type RecordItem = { id: string; text: string; createdAt: string };
 
-const STORAGE_KEY = "liflo_records";
+type Message = {
+  sender: Sender;
+  text: string;
+  suggestSave?: boolean;
+};
 
 const initialMessages: Message[] = [
   {
     sender: "ai",
-    text: "こんにちは！今日の出来事を振り返るお手伝いをしますね。",
+    text: "こんにちは。今日の出来事を振り返るお手伝いをします。",
   },
   {
     sender: "ai",
-    text: "思い出に残ったことや感じたことを教えてください。入力が終わったら送信ボタンを押してください。",
+    text: "思い出に残ったことや感じたことを教えてください。入力が終わったら送信ボタンを押してくださいね。",
   },
 ];
 
 export default function RecordPage() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
-  const [records, setRecords] = useState<RecordItem[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setRecords(parsed);
-      }
-    } catch (error) {
-      console.error("localStorage parse error:", error);
-    }
-  }, []);
-
-  const persistRecords = (nextRecords: RecordItem[]) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextRecords));
-  };
-
-  const handleSave = (text: string) => {
+  const handleSave = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    const newRecord: RecordItem = {
-      id: Date.now().toString(),
-      text: trimmed,
-      createdAt: new Date().toLocaleString(),
-    };
-    const updated = [...records, newRecord];
-    setRecords(updated);
-    persistRecords(updated);
-    setMessages((prev) => [
-      ...prev,
-      {
-        sender: "ai",
-        text: "記録を保存しました！振り返りページでいつでも確認できますよ。",
-      },
-    ]);
+    if (!trimmed || isSaving) return;
+    setIsSaving(true);
+    try {
+      await recordsApi.create({ text: trimmed });
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "ai",
+          text: "記録を保存しました。振り返りページに移動しますね。",
+        },
+      ]);
+      setTimeout(() => {
+        navigate("/review");
+      }, 600);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "ai",
+          text: err instanceof Error ? err.message : "保存に失敗しました。もう一度お試しください。",
+        },
+      ]);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSkip = () => {
@@ -80,7 +77,7 @@ export default function RecordPage() {
         ...prev,
         {
           sender: "ai",
-          text: "素敵な記録ですね。保存して振り返りに追加しておきますか？",
+          text: "素敵な記録です。保存して振り返りに追加しておきますか？",
           suggestSave: true,
         },
       ]);
@@ -114,10 +111,15 @@ export default function RecordPage() {
             })();
 
             return (
-              <div key={`${message.sender}-${index}-${message.text}`} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+              <div
+                key={`${message.sender}-${index}-${message.text}`}
+                className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+              >
                 <div
                   className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
-                    isUser ? "bg-liflo-accent text-white shadow-card" : "bg-white border border-liflo-border text-gray-800"
+                    isUser
+                      ? "bg-liflo-accent text-white shadow-card"
+                      : "bg-white border border-liflo-border text-gray-800"
                   }`}
                 >
                   {message.text}
@@ -126,9 +128,10 @@ export default function RecordPage() {
                       <button
                         type="button"
                         onClick={() => handleSave(latestUser.text)}
-                        className="text-sm font-medium bg-liflo-accent text-white rounded-full px-4 py-1.5 hover:bg-liflo-accent700 transition-colors"
+                        disabled={isSaving}
+                        className="text-sm font-medium bg-liflo-accent text-white rounded-full px-4 py-1.5 hover:bg-liflo-accent700 transition-colors disabled:opacity-60"
                       >
-                        💾 保存する
+                        {isSaving ? "保存中..." : "💾 保存する"}
                       </button>
                       <button
                         type="button"
@@ -160,7 +163,7 @@ export default function RecordPage() {
               送信
             </button>
           </div>
-          <p className="text-xs text-gray-500 text-right">Enterキーでも送信できます</p>
+          <p className="text-xs text-gray-500 text-right">Enterキーでも送信できます。</p>
         </form>
       </div>
     </AppLayout>
